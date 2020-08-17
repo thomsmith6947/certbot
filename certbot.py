@@ -40,6 +40,10 @@ import argparse, base64, cvp, json, socket, ssl, sys, urllib3
 
 
 
+ssl._create_default_https_context = ssl._create_unverified_context
+
+
+
 #
 # Define command line options for optparse
 #
@@ -146,7 +150,6 @@ def eapi(ipAddress, cmds):
     try:
         socket.setdefaulttimeout(3)
         url = 'https://{}:{}@{}/command-api'.format(user, password, ipAddress)
-        ssl._create_default_https_context = ssl._create_unverified_context
         switch = Server(url)
         response = switch.runCmds( 1, cmds )
 
