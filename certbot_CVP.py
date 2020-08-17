@@ -1,16 +1,61 @@
 from jsonrpclib import Server
 import ssl
 import base64
-from cvplibrary import CVPGlobalVariables, GlobalVariableNames
+from cvplibrary import CVPGlobalVariables, GlobalVariableNames, os
 
-ssl._create_default_https_context = ssl._create_unverified_context
 
-###Variables
-cert_name = 'cert.cer'
-key_name = 'cert.key'
-ca_name = 'ca.cer'
-intermediate_name = 'intermediate.cer' 
+class cvpApis(object):
+    def __init__(self):
+        socket.setdefaulttimeout(3)
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+        try:
+            self.server = cvp.Cvp(host=CVPGlobalVariables.getValue(GlobalVariableNames.CVP_IP, ssl=True, port=443, tmpDir='')
+            self.server.authenticate(CVPGlobalVariables.getValue(GlobalVariableNames.CVP_USERNAME, CVPGlobalVariables.getValue(GlobalVariableNames.CVP_PASSWORD)
+
+        except cvpServices.CvpError as error:
+            timestamp = datetime.now().replace(microsecond=0)
+            sys.stderr.write('{} {}ERROR{}: {}.\n'.format(timestamp, bcolors.ERROR, bcolors.NORMAL, error))
+            sys.exit(1)
+
+    def getDevice(self, deviceMacAddress, provisioned=True):
+        return self.server.getDevice(deviceMacAddress, provisioned)
+
+    def getDevices(self, provisioned=True):
+        return self.server.getDevices()
+
+
+                                                                 
+def eapi(ipAddress, cmds):
+    try:
+        socket.setdefaulttimeout(3)
+        url = 'https://{}:{}@{}/command-api'.format(CVPGlobalVariables.getValue(GlobalVariableNames.CVP_USERNAME, CVPGlobalVariables.getValue(GlobalVariableNames.CVP_PASSWORD, ipAddress)
+        ssl._create_default_https_context = ssl._create_unverified_context
+        switch = Server(url)
+        response = switch.runCmds( 1, cmds )
+
+    except socket.timeout:
+        if trace:
+            sys.stderr.write('Error in {} eAPI call to {}.\n'.format(cmds, ipAddress))
+
+        return None
+
+    except err as e:
+        if trace:
+            sys.stderr.write('Error in {} eAPI call to {}.\n'.format(cmds, ipAddress))
+
+        return None
+
+    else:
+        if trace:
+            sys.stderr.write('{} eAPI call to {} successful.\n'.format(cmds, ipAddress))
+
+        return response
+
+
+
+### Certificate Info - expected to be PEM format.
+# Replace with your own cert and key.
 cert = '''-----BEGIN CERTIFICATE-----
 Your Cert Goes Here.
 -----END CERTIFICATE-----'''
@@ -35,26 +80,45 @@ Your Intermediate Certificate Goes Here.
 intermediate_encoded = intermediate.encode('base64','strict')
 intermediate_stripped = intermediate_encoded.replace('\n','')
 
-ip = CVPGlobalVariables.getValue(GlobalVariableNames.CVP_IP)
-user = CVPGlobalVariables.getValue(GlobalVariableNames.CVP_USERNAME)
-passwd = CVPGlobalVariables.getValue(GlobalVariableNames.CVP_PASSWORD)
 
 ### Rest of script
 def main():
-  #SESSION SETUP FOR eAPI TO DEVICE
-  url = "https://%s:%s@%s/command-api" % (user, passwd, ip)
-  ss = Server(url)
+    targetDevice = cvpApis().getDevice(CVPGlobalVariables.getValue(GlobalVariableNames.CVP_MAC))
 
-  #Add Certs to /tmp/
-  remove_certificate = ss.runCmds ( 1, [ 'enable', 'bash timeout 10 rm -rf /tmp/cert*'])
-  upload_cert = ss.runCmds ( 1, [ 'enable', 'bash timeout 2 echo "'+cert_stripped+'" > /tmp/certcer.tmp', 'bash timeout 2 base64 -d /tmp/certcer.tmp > /tmp/cert.cer'])
-  upload_key = ss.runCmds ( 1, [ 'enable', 'bash timeout 2 echo "'+key_stripped+'" > /tmp/certkey.tmp', 'bash timeout 2 base64 -d /tmp/certkey.tmp > /tmp/cert.key'])
-  upload_intermediate = ss.runCmds ( 1, [ 'enable', 'bash timeout 2 echo "'+intermediate_stripped+'" > /tmp/cert.intermediate.tmp', 'bash timeout 2 base64 -d /tmp/cert.intermediate.tmp > /tmp/cert.intermediate'])
-  upload_ca = ss.runCmds ( 1, [ 'enable', 'bash timeout 2 echo "'+ca_cert_stripped+'" > /tmp/cert.ca.tmp', 'bash timeout 2 base64 -d /tmp/cert.ca.tmp > /tmp/cert.ca'])
-  #Move certs from /tmp to EOS.
-  response = ss.runCmds( 1, [ 'enable', 'copy file:/tmp/cert.cer certificate:'+cert_name, 'copy file:/tmp/cert.key sslkey:'+key_name, 'copy file:/tmp/cert.intermediate certificate:'+intermediate_name, 'copy file:/tmp/cert.ca certificate:'+ca_name])
-  #Remove certs from /tmp.
-  remove_certificate = ss.runCmds ( 1, [ 'enable', 'bash timeout 10 rm -rf /tmp/cert*'])
+                                                                                
+
+    #Removing existing certificates from /tmp.                                                                         
+    eapi(targetDevice.ipAddress, ['enable', 'bash timeout 10 rm -rf /tmp/cert*'])
+
+                                                                                
+
+    #Uploading new certificate.
+    eapi(targetDevice.ipAddress, ['enable', 'bash timeout 2 echo "{}" > /tmp/certcer.tmp'.format(cert_stripped), 'bash timeout 2 base64 -d /tmp/certcer.tmp > /tmp/cert.cer'])
+
+                                                                                
+
+    #Uploading new key.
+    eapi(targetDevice.ipAddress, ['enable', 'bash timeout 2 echo "{}" > /tmp/certcer.tmp'.format(cert_stripped), 'bash timeout 2 base64 -d /tmp/certcer.tmp > /tmp/cert.cer'])
+
+                                                                                
+
+    #Uploading intermediate certificate.
+    eapi(device.ipAddress, ['enable', 'bash timeout 2 echo "{}" > /tmp/cert.intermediate.tmp'.format(intermediate_stripped), 'bash timeout 2 base64 -d /tmp/cert.intermediate.tmp > /tmp/cert.intermediate'])
+
+
+                                                                                
+    #Uploading CA certificate.
+    eapi(device.ipAddress, ['enable', 'bash timeout 2 echo "{}" > /tmp/cert.ca.tmp'.format(ca_cert_stripped), 'bash timeout 2 base64 -d /tmp/cert.ca.tmp > /tmp/cert.ca'])
+
+                                                                                
+                                                                                
+    #Move certificates from /tmp to EOS.
+    eapi(device.ipAddress, ['enable', 'bash timeout 2 echo "{}" > /tmp/cert.ca.tmp'.format(ca_cert_stripped), 'bash timeout 2 base64 -d /tmp/cert.ca.tmp > /tmp/cert.ca'])
+
+                                                                                
+                                                                                
+    #Removing certificates from /tmp.                                                                         
+    eapi(targetDevice.ipAddress, ['enable', 'bash timeout 10 rm -rf /tmp/cert*'])
 
 if __name__ == "__main__":
   main()
