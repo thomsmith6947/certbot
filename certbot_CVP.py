@@ -4,6 +4,9 @@ import base64
 from cvplibrary import CVPGlobalVariables, GlobalVariableNames, os
 
 
+ssl._create_default_https_context = ssl._create_unverified_context
+
+
 class cvpApis(object):
     def __init__(self):
         socket.setdefaulttimeout(3)
@@ -30,7 +33,6 @@ def eapi(ipAddress, cmds):
     try:
         socket.setdefaulttimeout(3)
         url = 'https://{}:{}@{}/command-api'.format(CVPGlobalVariables.getValue(GlobalVariableNames.CVP_USERNAME, CVPGlobalVariables.getValue(GlobalVariableNames.CVP_PASSWORD, ipAddress)
-        ssl._create_default_https_context = ssl._create_unverified_context
         switch = Server(url)
         response = switch.runCmds( 1, cmds )
 
