@@ -40,6 +40,10 @@ import argparse, base64, cvp, json, socket, ssl, sys, urllib3
 
 
 
+PARENT_CONTAINER = 'Tenant'
+
+
+
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
@@ -138,6 +142,15 @@ class cvpApis(object):
             sys.stderr.write('{} {}ERROR{}: {}.\n'.format(timestamp, bcolors.ERROR, bcolors.NORMAL, error))
             sys.exit(1)
 
+    def addConfiglet(self, configlet):
+        return self.server.addConfiglet(configlet)
+
+    def applyConfigletToContainer(self, containerName, containerKey, cnl, ckl, cbnl, cbkl):
+        return self.service.applyConfigletToContainer(containerName, containerKey, cnl, ckl, cbnl, cbkl)
+    
+    def getConfigletsInfo(self):
+        return self.service.getConfigletsInfo()
+    
     def getDevice(self, deviceMacAddress, provisioned=True):
         return self.server.getDevice(deviceMacAddress, provisioned)
 
@@ -280,14 +293,6 @@ def main():
             
             
             if trace:
-                sys.stderr.write('Applying new certificate.\n')
-          
-            eapi(device.ipAddress, ['enable', 'configure', 'management security', 'ssl profile https-secure', 'certificate cert key certkey', 'cipher-list HIGH:!NULL:!MD5:!aNULL'])
-            eapi(device.ipAddress, ['enable', 'configure', 'management api http-commands', 'protocol https ssl profile https-secure'])
-
-            
-            
-            if trace:
                 sys.stderr.write('Removing certificates from /tmp.\n')
 
             eapi(device.ipAddress, ['enable', 'bash timeout 10 rm -rf /tmp/cert*'])
@@ -304,6 +309,129 @@ def main():
 
 
     sys.stderr.write('\n===========================================================\n\n\n\n\n')
+
+
+    if not debug:
+        timestamp = datetime.now().replace(microsecond=0)
+        sys.stderr.write('{} {}INFO{}: Writing FABRIC-SecureCiphers to configlets.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL)
+        
+        
+        certConfig = 'management security\n   ssl profile https-secure\n      certificate cert key certkey\n      cipher-list HIGH:!NULL:!MD5:!aNULL\n'
+        certConfig += '!\n'
+        certConfig += 'management api http-commands\n   protocol https ssl profile https-secure'
+        
+        
+        secureCiphersConfiglet = cvp.Configlet('FABRIC-SecureCiphers', certConfig, 'Static', user, False)
+        
+        
+        try:
+            cvpApis().addConfiglet(secureCiphersConfiglet)
+            
+        except cvpServices.CvpError as error:
+            timestamp = datetime.now().replace(microsecond=0)
+            sys.stderr.write('{} {}ERROR{}: {}.\n'.format(timestamp, bcolors.ERROR, bcolors.NORMAL, error))
+            sys.exit(1)
+            
+        else:
+            containerKey = cvpApis().searchContainer(PARENT_CONTAINER)[0]['Key']
+            
+            
+            cnl = []
+            cnl.append('FABRIC-SecureCiphers')
+            
+            
+            ckl = []
+            for configlet in cnl:
+                for configletInfo in cvpApis().getConfigletsInfo():
+                    if re.match(configletInfo['name'], configlet) is not None:
+                        ckl.append(configletInfo['key'])
+                        
+                        
+            try:
+                taskIds = cvpApis().applyConfigletToContainer(PARENT_CONTAINER, containerKey, cnl, ckl, [], [])
+            
+            except cvpServices.CvpError as error:
+                timestamp = datetime.now().replace(microsecond=0)
+                sys.stderr.write('{} {}ERROR{}: {} while applying FABRIC-SecureCiphers to Container {}.\n'.format(timestamp, bcolors.ERROR, bcolors.NORMAL, error, PARENT_CONTAINER))      
+                sys.exit(1)
+                
+            else:
+                timestamp = datetime.now().replace(microsecond=0)
+                sys.stderr.write('{} {}INFO{}: Applying FABRIC-SecureCiphers configlet to container {}.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, PARENT_CONTAINER)
+
+
+                timestamp = datetime.now().replace(microsecond=0)
+                sys.stderr.write('{} {}INFO{}: Creating certbot.py {} Change Control.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, timestamp))
+
+
+                request = {}
+                request['config'] = {}
+                request['config']['id'] = str(uuid4())
+                request['config']['name'] = 'certbot.py {}'.format(timestamp)
+                request['config']['root_stage'] = {}
+                request['config']['root_stage']['id'] = 'Root Stage'
+                request['config']['root_stage']['stage_row'] = []
+
+
+                stages = []
+                i = 1
+                for taskId in taskIds:
+                    stage = {}
+                    stage['id'] = str(uuid4())
+                    stage['name'] = 'stage1-{}'.format(i)
+                    stage['action'] = {}
+                    stage['action']['name'] = 'task'
+                    stage['action']['args'] = {}
+                    stage['action']['args']['TaskID'] = str(taskId)
+
+                    stages.append(stage)
+
+                    i += 1
+
+
+                request['config']['root_stage']['stage_row'].append({'stage': stages})
+                result = cvpApis().updateChangeControl(request)
+
+
+                timestamp = datetime.now().replace(microsecond=0)
+                sys.stderr.write('{} {}INFO{}: Auto approved {} Change Control.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, request['config']['name']))
+                cvpApis().addChangeControlApproval({'cc_id': result['id'], 'cc_timestamp': result['update_timestamp']})
+
+
+                timestamp = datetime.now().replace(microsecond=0)
+                sys.stderr.write('{} {}INFO{}: Executing {} Change Control.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, request['config']['name']))
+                cvpApis().startChangeControl({'cc_id': result['id']})
+
+
+                if trace:
+                    timestamp = datetime.now().replace(microsecond=0)
+                    sys.stderr.write('{} {}INFO{}: Checking status of {} Change Control.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, request['config']['name']))
+
+
+                ccRunning = True
+                ccFailed = False
+                 while ccRunning:
+                    timestamp = datetime.now().replace(microsecond=0)
+                    status = cvpApis().getChangeControlStatus({'cc_id': result['id']})
+
+
+                    if status['status']['state'] == 'Completed':
+                        ccRunning = False
+                        timestamp = datetime.now().replace(microsecond=0)
+                        sys.stderr.write('{} {}INFO{}: {} Change Control complete.  Exiting.\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, request['config']['name']))
+
+
+                    elif status['status']['state'] == 'Failed':
+                        ccRunning = False
+                        ccFailed = True
+                        timestamp = datetime.now().replace(microsecond=0)
+                        sys.stderr.write('{} {}ERROR{}:  {} Change Control unsuccessful.  Initiate Network Rollback.\n'.format(timestamp, bcolors.ERROR, bcolors.NORMAL, request['config']['name']))
+
+
+                    else:
+                        timestamp = datetime.now().replace(microsecond=0)
+                        sys.stderr.write('{} {}INFO{}: {} Change Control outstanding.  Sleeping 30 seconds...\n'.format(timestamp, bcolors.BOLD, bcolors.NORMAL, request['config']['name']))
+                        sleep (30)
 
 
 
